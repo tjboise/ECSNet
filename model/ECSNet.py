@@ -108,7 +108,6 @@ class ECSBlock(nn.Module):
 class ECSNet(BaseModel):
     def __init__(self, num_classes, in_channels=3, freeze_bn=False, **_):
         super(ECSNet, self).__init__()
-        # self.initial = InitalBlock(in_channels)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
         self.conv = nn.Conv2d(in_channels, 16 - in_channels, 3, padding=1, stride=2)
         self.bn = nn.BatchNorm2d(16)
