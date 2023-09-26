@@ -5,49 +5,35 @@ from base import BaseModel
 from utils.helpers import initialize_weights
 from itertools import chain
 
-class InitalBlock(nn.Module):
-    def __init__(self, in_channels, use_prelu=True):
-        super(InitalBlock, self).__init__()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
-        self.conv = nn.Conv2d(in_channels, 16 - in_channels, 3, padding=1, stride=2)
-        self.bn = nn.BatchNorm2d(16)
-        self.prelu = nn.PReLU(16) if use_prelu else nn.ReLU(inplace=True)
-
-    def forward(self, x):   
-        x = torch.cat((self.pool(x), self.conv(x)), dim=1)
-        x = self.bn(x)
-        x = self.prelu(x)
-        return x
-
 class ECSBlock(nn.Module):
-    def __init__(self, in_channels, out_channels=None, activation=None, dilation=1, downsample=False, proj_ratio=4, 
-                        upsample=False, asymetric=False, regularize=True, p_drop=None, use_prelu=True):
+    def __init__(self, inchannel, outchannel=None, dilation=1, downsample=False, proj_ratio=4,
+                 upsample=False, asymetric=False, regularize=True, p_drop=None, use_prelu=True):
         super(ECSBlock, self).__init__()
 
-        self.pad = 0
-        self.upsample = upsample
-        self.downsample = downsample
-        if out_channels is None: out_channels = in_channels
-        else: self.pad = out_channels - in_channels
+        self.padding = 0
+        self.upsampling = upsample
+        self.downsampling = downsample
+        if outchannel is None: outchannel = inchannel
+        else: self.padding = outchannel - inchannel
 
         if regularize: assert p_drop is not None
         if downsample: assert not upsample
         elif upsample: assert not downsample
-        inter_channels = in_channels//proj_ratio
+        inter_channels = inchannel // proj_ratio
 
         # Main
         if upsample:
-            self.spatil_conv = nn.Conv2d(in_channels, out_channels, 1, bias=False)
-            self.bn_up = nn.BatchNorm2d(out_channels)
-            self.unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+            self.spatil_convlution = nn.Conv2d(inchannel, outchannel, 1, bias=False)
+            self.batchnorm_up = nn.BatchNorm2d(outchannel)
+            self.unpooling = nn.MaxUnpool2d(kernel_size=2, stride=2)
         elif downsample:
             self.pool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
 
         # Bottleneck
         if downsample: 
-            self.conv1 = nn.Conv2d(in_channels, inter_channels, 2, stride=2, bias=False)
+            self.conv1 = nn.Conv2d(inchannel, inter_channels, 2, stride=2, bias=False)
         else:
-            self.conv1 = nn.Conv2d(in_channels, inter_channels, 1, bias=False)
+            self.conv1 = nn.Conv2d(inchannel, inter_channels, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(inter_channels)
         self.prelu1 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
 
@@ -64,31 +50,31 @@ class ECSBlock(nn.Module):
         else:
             self.conv2 = nn.Conv2d(inter_channels, inter_channels, 3, padding=dilation, dilation=dilation, bias=False)
         self.bn2 = nn.BatchNorm2d(inter_channels)
-        self.prelu2 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
+        self.p_relu22 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
 
-        self.conv3 = nn.Conv2d(inter_channels, out_channels, 1, bias=False)
-        self.bn3 = nn.BatchNorm2d(out_channels)
+        self.conv3 = nn.Conv2d(inter_channels, outchannel, 1, bias=False)
+        self.bn3 = nn.BatchNorm2d(outchannel)
         self.prelu3 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
 
         self.regularizer = nn.Dropout2d(p_drop) if regularize else None
-        self.prelu_out = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
+        self.prelu44 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
 
     def forward(self, x, indices=None, output_size=None):
         # Main branch
         identity = x
-        if self.upsample:
+        if self.upsampling:
             assert (indices is not None) and (output_size is not None)
-            identity = self.bn_up(self.spatil_conv(identity))
+            identity = self.batchnorm_up(self.spatil_convlution(identity))
             if identity.size() != indices.size():
                 pad = (indices.size(3) - identity.size(3), 0, indices.size(2) - identity.size(2), 0)
                 identity = F.pad(identity, pad, "constant", 0)
-            identity = self.unpool(identity, indices=indices)#, output_size=output_size)
-        elif self.downsample:
+            identity = self.unpooling(identity, indices=indices)#, output_size=output_size)
+        elif self.downsampling:
             identity, idx = self.pool(identity)
 
 
-        if self.pad > 0:
-            extras = torch.zeros((identity.size(0), self.pad, identity.size(2), identity.size(3)))
+        if self.padding > 0:
+            extras = torch.zeros((identity.size(0), self.padding, identity.size(2), identity.size(3)))
             if torch.cuda.is_available(): extras = extras.cuda(0)
             identity = torch.cat((identity, extras), dim = 1)
 
@@ -98,7 +84,7 @@ class ECSBlock(nn.Module):
         x = self.prelu1(x)
         x = self.conv2(x)
         x = self.bn2(x)
-        x = self.prelu2(x)
+        x = self.p_relu22(x)
         x = self.conv3(x)
         x = self.bn3(x)
         x = self.prelu3(x)
@@ -111,9 +97,9 @@ class ECSBlock(nn.Module):
             x = F.pad(x, pad, "constant", 0)
 
         x += identity
-        x = self.prelu_out(x)
+        x = self.prelu44(x)
 
-        if self.downsample:
+        if self.downsampling:
             return x, idx
         return x
 
@@ -122,7 +108,12 @@ class ECSBlock(nn.Module):
 class ECSNet(BaseModel):
     def __init__(self, num_classes, in_channels=3, freeze_bn=False, **_):
         super(ECSNet, self).__init__()
-        self.initial = InitalBlock(in_channels)
+        # self.initial = InitalBlock(in_channels)
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
+        self.conv = nn.Conv2d(in_channels, 16 - in_channels, 3, padding=1, stride=2)
+        self.bn = nn.BatchNorm2d(16)
+        self.prelu = nn.PReLU(16)
+
 
         self.ECSblock10 = ECSBlock(16, 64, downsample=True, p_drop=0.01)
         self.ECSblock11 = ECSBlock(64, p_drop=0.01)
@@ -162,7 +153,11 @@ class ECSNet(BaseModel):
         if freeze_bn: self.freeze_bn()
 
     def forward(self, x):
-        x = self.initial(x)
+
+        x = torch.cat((self.pool(x), self.conv(x)), dim=1)
+        x = self.bn(x)
+        x = self.prelu(x)
+
 
         sz1 = x.size()
         x, indices1 = self.ECSblock10(x)
@@ -201,3 +196,6 @@ class ECSNet(BaseModel):
         for module in self.modules():
             if isinstance(module, nn.BatchNorm2d): module.eval()
 
+if __name__ == "__main__":
+    net = ECSNet(num_classes=1, in_channels=1)
+    print(net)
