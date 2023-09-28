@@ -9,13 +9,12 @@ from itertools import chain
 
 
 class ECSBlock(nn.Module):
-    def __init__(self, inchannel, outchannel=None, dilation=1, downsample=False, proj_ratio=4,
-                 upsample=False, regularize=True, p_drop=None, use_prelu=True):
+    def __init__(self, inchannel, outchannel=None, dilation=1,  proj_ratio=4,
+                 regularize=True, p_drop=None, use_prelu=True):
         super(ECSBlock, self).__init__()
 
         self.padding = 0
-        self.upsampling = upsample
-        self.downsampling = downsample
+
         if outchannel is None: outchannel = inchannel
         else: self.padding = outchannel - inchannel
 
@@ -84,14 +83,11 @@ class Parallel_part(nn.Module):
         # Bottleneck
 
         self.conv1 = nn.Conv2d(inchannel, inter_channels, 2, stride=2, bias=False)
-
         self.bn1 = nn.BatchNorm2d(inter_channels)
         self.prelu1 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
-
         self.conv2 = nn.Conv2d(inter_channels, inter_channels, 3, padding=dilation, dilation=dilation, bias=False)
         self.bn2 = nn.BatchNorm2d(inter_channels)
         self.p_relu22 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
-
         self.conv3 = nn.Conv2d(inter_channels, outchannel, 1, bias=False)
         self.bn3 = nn.BatchNorm2d(outchannel)
         self.prelu3 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
@@ -155,25 +151,16 @@ class part2(nn.Module):
         self.spatil_convlution = nn.Conv2d(inchannel, outchannel, 1, bias=False)
         self.batchnorm_up = nn.BatchNorm2d(outchannel)
         self.unpooling = nn.MaxUnpool2d(kernel_size=2, stride=2)
-
-
-
         self.conv1 = nn.Conv2d(inchannel, inter_channels, 1, bias=False)
         self.bn1 = nn.BatchNorm2d(inter_channels)
         self.prelu1 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
-
-
-
         self.conv2 = nn.ConvTranspose2d(inter_channels, inter_channels, kernel_size=3, padding=1,
                                             output_padding=1, stride=2, bias=False)
-
         self.bn2 = nn.BatchNorm2d(inter_channels)
         self.p_relu22 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
-
         self.conv3 = nn.Conv2d(inter_channels, outchannel, 1, bias=False)
         self.bn3 = nn.BatchNorm2d(outchannel)
         self.prelu3 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
-
         self.regularizer = nn.Dropout2d(p_drop) if regularize else None
         self.prelu44 = nn.PReLU() if use_prelu else nn.ReLU(inplace=True)
 
